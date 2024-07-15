@@ -1,0 +1,5 @@
+*/.venv/
+*/.env
+
+*/chromedriver-32.exe
+*/chrome-win32/
