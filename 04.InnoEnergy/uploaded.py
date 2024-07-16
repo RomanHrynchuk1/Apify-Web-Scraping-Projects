@@ -55,8 +55,9 @@ async def main() -> None:
         # start_urls = actor_input.get('start_urls', [{'url': 'https://activate-companies.softr.app/'}])
         # max_depth = actor_input.get('max_depth', 1)
 
-        start_urls = actor_input.get('start_urls', BASE_URL_LIST)
-        Actor.log.info(f"start_urls: {str(actor_input)}")
+        # start_urls = actor_input.get('start_urls', BASE_URL_LIST)
+        start_urls = BASE_URL_LIST
+        Actor.log.info(f"start_urls: {str(start_urls)}")
 
         # if not start_urls:
         #     Actor.log.info('No start URLs specified in actor input, exiting...')
