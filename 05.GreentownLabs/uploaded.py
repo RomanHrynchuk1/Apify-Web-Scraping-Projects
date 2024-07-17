@@ -7,7 +7,6 @@ To build Apify Actors, utilize the Apify SDK toolkit, read more at the official 
 https://docs.apify.com/sdk/python
 """
 
-import re
 import time
 from urllib.parse import urljoin
 
@@ -132,29 +131,30 @@ async def main() -> None:
             try:
                 # Locate the host element
                 shadow_host = driver.find_element(By.CSS_SELECTOR, "#usercentrics-root")
+                try:
+                    # Script to access Shadow Root and find the button
+                    script = """
+                    return arguments[0].shadowRoot.querySelector('button[data-testid="uc-accept-all-button"]');
+                    """
+                    # Execute script with the host element as argument
+                    button_element = driver.execute_script(script, shadow_host)
+                    
+                    try:
+                        # Interact with the button_element (click on it)
+                        button_element.click()
+                        time.sleep(5)
+                    except AttributeError as e:
+                        Actor.log.info(f"Button element is not found: {e}")
+                    except WebDriverException as e:
+                        Actor.log.exception(f"WebDriver error while clicking the button: {e}")  
+                        
+                except WebDriverException as e:
+                    Actor.log.exception(f"WebDriver error while executing script: {e}")
+                    
             except NoSuchElementException as e:
                 Actor.log.info(f"Shadow host element not found: {e}")
             except WebDriverException as e:
                 Actor.log.exception(f"WebDriver error while locating shadow host: {e}")
-
-            try:
-                # Script to access Shadow Root and find the button
-                script = """
-                return arguments[0].shadowRoot.querySelector('button[data-testid="uc-accept-all-button"]');
-                """
-                # Execute script with the host element as argument
-                button_element = driver.execute_script(script, shadow_host)
-            except WebDriverException as e:
-                Actor.log.exception(f"WebDriver error while executing script: {e}")
-
-            try:
-                # Interact with the button_element (click on it)
-                button_element.click()
-                time.sleep(5)
-            except AttributeError as e:
-                Actor.log.info(f"Button element is not found: {e}")
-            except WebDriverException as e:
-                Actor.log.exception(f"WebDriver error while clicking the button: {e}")
 
             otherLinks = []
             try:
@@ -172,7 +172,7 @@ async def main() -> None:
             try:
                 # Scroll to the bottom to click the next button.
                 driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                time.sleep(3)
+                time.sleep(1)
             except WebDriverException as e:
                 Actor.log.info(f"WebDriver error while scrolling: {e}")
 
@@ -205,80 +205,68 @@ async def main() -> None:
                     Actor.log.exception(f"An unexpected error occurred: {e}")
                     break
 
-                for other_link in otherLinks:
+            for other_link in otherLinks:
 
-                    try:
-                        driver.get(other_link)
-                        time.sleep(3)
-                    except TimeoutException as e:
-                        Actor.log.exception(f"Timeout while trying to load the page: {e}")
-                    except WebDriverException as e:
-                        Actor.log.exception(f"WebDriver error while navigating to the link: {e}")
-                    except Exception as e:
-                        Actor.log.exception(f"An unexpected error occurred: {e}")
+                try:
+                    driver.get(other_link)
+                    time.sleep(0.3)
+                except TimeoutException as e:
+                    Actor.log.exception(f"Timeout while trying to load the page: {e}")
+                except WebDriverException as e:
+                    Actor.log.exception(f"WebDriver error while navigating to the link: {e}")
+                except Exception as e:
+                    Actor.log.exception(f"An unexpected error occurred: {e}")
 
-                    try:
-                        companyName = driver.find_element(
-                            By.CSS_SELECTOR, "h1.entry-title"
-                        ).text
-                    except NoSuchElementException as e:
-                        Actor.log.info(f"Company name element not found: {e}")
-                        companyName = "N/A"
-                    except WebDriverException as e:
-                        Actor.log.exception(f"WebDriver error while finding company name: {e}")
-                        companyName = "N/A"
+                try:
+                    companyName = driver.find_element(
+                        By.CSS_SELECTOR, "h1.entry-title"
+                    ).text
+                except NoSuchElementException as e:
+                    Actor.log.info(f"Company name element not found: {e}")
+                    companyName = "N/A"
+                except WebDriverException as e:
+                    Actor.log.exception(f"WebDriver error while finding company name: {e}")
+                    companyName = "N/A"
 
-                    try:
-                        companySolution = driver.find_element(
-                            By.CSS_SELECTOR, "h2.entry-subtitle"
-                        ).text
-                    except NoSuchElementException as e:
-                        Actor.log.info(f"Company solution element not found: {e}")
-                        companySolution = None
-                    except WebDriverException as e:
-                        Actor.log.exception(f"WebDriver error while finding company solution: {e}")
-                        companySolution = None
+                try:
+                    companySolution = driver.find_element(
+                        By.CSS_SELECTOR, "div.entry-content > p"
+                    ).text
+                except NoSuchElementException as e:
+                    Actor.log.info(f"Fallback company solution element not found: {e}")
+                    companySolution = "N/A"
+                except WebDriverException as e:
+                    Actor.log.exception(
+                        f"WebDriver error while finding fallback company solution: {e}"
+                    )
+                    companySolution = "N/A"
 
-                    if not companySolution:
-                        try:
-                            companySolution = driver.find_element(
-                                By.CSS_SELECTOR, "div.entry-content > p"
-                            ).text
-                        except NoSuchElementException as e:
-                            Actor.log.info(f"Fallback company solution element not found: {e}")
-                            companySolution = "N/A"
-                        except WebDriverException as e:
-                            Actor.log.exception(
-                                f"WebDriver error while finding fallback company solution: {e}"
-                            )
-                            companySolution = "N/A"
+                try:
+                    companyWebsite = driver.find_element(
+                        By.XPATH,
+                        "//div[@class = 'notch-content']//a[@class = 'button button-orange']",
+                    ).get_attribute("href")
+                except NoSuchElementException as e:
+                    Actor.log.info(f"Company website element not found: {e}")
+                    companyWebsite = "#"
+                except WebDriverException as e:
+                    Actor.log.exception(f"WebDriver error while finding company website: {e}")
+                    companyWebsite = "#"
 
-                    try:
-                        companyWebsite = driver.find_element(
-                            By.XPATH,
-                            "//div[@class = 'notch-content']//a[@class = 'button button-orange']",
-                        ).get_attribute("href")
-                    except NoSuchElementException as e:
-                        Actor.log.info(f"Company website element not found: {e}")
-                        companyWebsite = "#"
-                    except WebDriverException as e:
-                        Actor.log.exception(f"WebDriver error while finding company website: {e}")
-                        companyWebsite = "#"
-
-                    try:
-                        Actor.log.info(
-                            f"Name: {companyName}, Solution: {companySolution}, Website: {companyWebsite}, Link: {other_link}"
-                        )
-                        await Actor.push_data(
-                            {
-                                "companyName": companyName,
-                                "affiliatedInstitution": "",
-                                "companySolution": companySolution,
-                                "companyWebsite": companyWebsite,
-                                "otherLink": other_link,
-                            }
-                        )
-                    except Exception as e:
-                        Actor.log.exception(f"Error pushing results: {e}")
+                try:
+                    Actor.log.info(
+                        f"Name: {companyName}, Solution: {companySolution}, Website: {companyWebsite}, Link: {other_link}"
+                    )
+                    await Actor.push_data(
+                        {
+                            "companyName": companyName,
+                            "affiliatedInstitution": "",
+                            "companySolution": companySolution,
+                            "companyWebsite": companyWebsite,
+                            "otherLink": other_link,
+                        }
+                    )
+                except Exception as e:
+                    Actor.log.exception(f"Error pushing results: {e}")
 
         driver.quit()
