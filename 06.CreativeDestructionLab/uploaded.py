@@ -134,7 +134,7 @@ async def main() -> None:
             try:
                 companySolution_elements = driver.find_elements(By.CSS_SELECTOR, "div.article-body > p")
                 if companySolution_elements:
-                    companySolution = companySolution_elements[-1].text
+                    companySolution = "\n".join([solution.text.strip() for solution in companySolution_elements[1:]])
                 else:
                     companySolution = "N/A"
             except NoSuchElementException as e:
@@ -151,13 +151,13 @@ async def main() -> None:
                 companyWebsite = driver.find_element(By.CSS_SELECTOR, "a.company-website-link").get_attribute('href')
             except NoSuchElementException as e:
                 Actor.log.info(f"Company website element not found: {e}")
-                companyWebsite = None
+                companyWebsite = "#"
             except WebDriverException as e:
                 Actor.log.exception(f"WebDriver error while finding company website: {e}")
-                companyWebsite = None
+                companyWebsite = "#"
             except Exception as e:
                 Actor.log.exception(f"An unexpected error occurred: {e}")
-                companyWebsite = None
+                companyWebsite = "#"
 
             try:
                 Actor.log.info(

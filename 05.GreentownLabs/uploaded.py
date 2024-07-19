@@ -75,7 +75,6 @@ async def main() -> None:
 
         chrome_options.add_argument("--no-sandbox")
         chrome_options.add_argument("--disable-dev-shm-usage")
-
         chrome_options.add_argument("--blink-settings=imagesEnabled=false")
 
         driver = webdriver.Chrome(options=chrome_options)
@@ -83,39 +82,11 @@ async def main() -> None:
         driver.get("http://www.example.com")
         assert driver.title == "Example Domain"
 
-        # # Process the requests in the queue one by one
-        # while request := await default_queue.fetch_next_request():
-        #     url = request['url']
-        #     depth = request['userData']['depth']
-        #     Actor.log.info(f'Scraping {url} ...')
-
-        #     try:
-        #         # Open the URL in the Selenium WebDriver
-        #         driver.get(url)
-
-        #         # If we haven't reached the max depth,
-        #         # look for nested links and enqueue their targets
-        #         if depth < max_depth:
-        #             for link in driver.find_elements(By.TAG_NAME, 'a'):
-        #                 link_href = link.get_attribute('href')
-        #                 link_url = urljoin(url, link_href)
-        #                 if link_url.startswith(('http://', 'https://')):
-        #                     Actor.log.info(f'Enqueuing {link_url} ...')
-        #                     await default_queue.add_request({
-        #                         'url': link_url,
-        #                         'userData': {'depth': depth + 1},
-        #                     })
-
-        #         # Push the title of the page into the default dataset
-        #         title = driver.title
-        #         await Actor.push_data({'url': url, 'title': title})
-        #     except Exception:
-        #         Actor.log.exception(f'Cannot extract data from {url}.')
-        #     finally:
-        #         await default_queue.mark_request_as_handled(request)
-
+        
+        otherLinks_final = []
+        
         for start_url in start_urls:
-            
+
             Actor.log.info(start_url)
 
             try:
@@ -138,7 +109,7 @@ async def main() -> None:
                     """
                     # Execute script with the host element as argument
                     button_element = driver.execute_script(script, shadow_host)
-                    
+
                     try:
                         # Interact with the button_element (click on it)
                         button_element.click()
@@ -146,17 +117,19 @@ async def main() -> None:
                     except AttributeError as e:
                         Actor.log.info(f"Button element is not found: {e}")
                     except WebDriverException as e:
-                        Actor.log.exception(f"WebDriver error while clicking the button: {e}")  
-                        
+                        Actor.log.exception(
+                            f"WebDriver error while clicking the button: {e}"
+                        )
+
                 except WebDriverException as e:
                     Actor.log.exception(f"WebDriver error while executing script: {e}")
-                    
+
             except NoSuchElementException as e:
                 Actor.log.info(f"Shadow host element not found: {e}")
             except WebDriverException as e:
                 Actor.log.exception(f"WebDriver error while locating shadow host: {e}")
 
-            otherLinks = []
+            
             try:
                 otherLinks = [
                     element.get_attribute("href")
@@ -164,6 +137,7 @@ async def main() -> None:
                         By.XPATH, "//a[contains(@class, 'card') and @rel='bookmark']"
                     )
                 ]
+                otherLinks_final.extend(otherLinks)
             except NoSuchElementException as e:
                 Actor.log.exception(f"No elements found with specified XPath: {e}")
             except WebDriverException as e:
@@ -190,11 +164,15 @@ async def main() -> None:
                                 "//a[contains(@class, 'card') and @rel='bookmark']",
                             )
                         ]
-                        otherLinks.extend(new_links)
+                        otherLinks_final.extend(new_links)
                     except NoSuchElementException as e:
-                        Actor.log.exception(f"No elements found with specified XPath: {e}")
+                        Actor.log.exception(
+                            f"No elements found with specified XPath: {e}"
+                        )
                     except WebDriverException as e:
-                        Actor.log.exception(f"WebDriver error while finding elements: {e}")
+                        Actor.log.exception(
+                            f"WebDriver error while finding elements: {e}"
+                        )
                 except NoSuchElementException:
                     Actor.log.info("Next button not found. Ending pagination.")
                     break
@@ -205,68 +183,96 @@ async def main() -> None:
                     Actor.log.exception(f"An unexpected error occurred: {e}")
                     break
 
-            for other_link in otherLinks:
+        driver.delete_all_cookies()
+        driver.quit()
+        
+        chrome_options.add_experimental_option("prefs", {'profile.managed_default_content_settings.javascript': 2})
+        driver = webdriver.Chrome(options=chrome_options)
+        
+        for other_link in otherLinks_final:
 
-                try:
-                    driver.get(other_link)
-                    time.sleep(0.3)
-                except TimeoutException as e:
-                    Actor.log.exception(f"Timeout while trying to load the page: {e}")
-                except WebDriverException as e:
-                    Actor.log.exception(f"WebDriver error while navigating to the link: {e}")
-                except Exception as e:
-                    Actor.log.exception(f"An unexpected error occurred: {e}")
+            try:
+                driver.get(other_link)
+                time.sleep(0.3)
+            except TimeoutException as e:
+                Actor.log.exception(f"Timeout while trying to load the page: {e}")
+            except WebDriverException as e:
+                Actor.log.exception(
+                    f"WebDriver error while navigating to the link: {e}"
+                )
+            except Exception as e:
+                Actor.log.exception(f"An unexpected error occurred: {e}")
 
-                try:
-                    companyName = driver.find_element(
-                        By.CSS_SELECTOR, "h1.entry-title"
-                    ).text
-                except NoSuchElementException as e:
-                    Actor.log.info(f"Company name element not found: {e}")
-                    companyName = "N/A"
-                except WebDriverException as e:
-                    Actor.log.exception(f"WebDriver error while finding company name: {e}")
-                    companyName = "N/A"
+            try:
+                companyName = driver.find_element(
+                    By.CSS_SELECTOR, "h1.entry-title"
+                ).text
+            except NoSuchElementException as e:
+                Actor.log.info(f"Company name element not found: {e}")
+                companyName = "N/A"
+            except WebDriverException as e:
+                Actor.log.exception(
+                    f"WebDriver error while finding company name: {e}"
+                )
+                companyName = "N/A"
 
-                try:
-                    companySolution = driver.find_element(
-                        By.CSS_SELECTOR, "div.entry-content > p"
-                    ).text
-                except NoSuchElementException as e:
-                    Actor.log.info(f"Fallback company solution element not found: {e}")
-                    companySolution = "N/A"
-                except WebDriverException as e:
-                    Actor.log.exception(
-                        f"WebDriver error while finding fallback company solution: {e}"
+            try:
+                companySolutionList1 = driver.find_elements(
+                    By.CSS_SELECTOR, "div.response-answer"
+                )
+                companySolutionList2 = driver.find_elements(
+                    By.CSS_SELECTOR, "div.entry-content > p"
+                )
+                companySolution = (
+                    companySolutionList1[0].text
+                    if companySolutionList1
+                    else (
+                        companySolutionList2[0].text
+                        if companySolutionList2
+                        else None
                     )
-                    companySolution = "N/A"
+                )
+                if not companySolution:
+                    Actor.log.warning("Can't find the companySolution.")
+            except NoSuchElementException as e:
+                Actor.log.info(f"Fallback company solution element not found: {e}")
+                companySolution = "N/A"
+            except WebDriverException as e:
+                Actor.log.exception(
+                    f"WebDriver error while finding fallback company solution: {e}"
+                )
+                companySolution = "N/A"
+            except Exception as e:
+                Actor.log.exception(f"An unexpected error occurred: {e}")
 
-                try:
-                    companyWebsite = driver.find_element(
-                        By.XPATH,
-                        "//div[@class = 'notch-content']//a[@class = 'button button-orange']",
-                    ).get_attribute("href")
-                except NoSuchElementException as e:
-                    Actor.log.info(f"Company website element not found: {e}")
-                    companyWebsite = "#"
-                except WebDriverException as e:
-                    Actor.log.exception(f"WebDriver error while finding company website: {e}")
-                    companyWebsite = "#"
+            try:
+                companyWebsite = driver.find_element(
+                    By.XPATH,
+                    "//div[@class = 'notch-content']//a[@class = 'button button-orange']",
+                ).get_attribute("href")
+            except NoSuchElementException as e:
+                Actor.log.info(f"Company website element not found: {e}")
+                companyWebsite = "#"
+            except WebDriverException as e:
+                Actor.log.exception(
+                    f"WebDriver error while finding company website: {e}"
+                )
+                companyWebsite = "#"
 
-                try:
-                    Actor.log.info(
-                        f"Name: {companyName}, Solution: {companySolution}, Website: {companyWebsite}, Link: {other_link}"
-                    )
-                    await Actor.push_data(
-                        {
-                            "companyName": companyName,
-                            "affiliatedInstitution": "",
-                            "companySolution": companySolution,
-                            "companyWebsite": companyWebsite,
-                            "otherLink": other_link,
-                        }
-                    )
-                except Exception as e:
-                    Actor.log.exception(f"Error pushing results: {e}")
+            try:
+                Actor.log.info(
+                    f"Name: {companyName}, Solution: {companySolution}, Website: {companyWebsite}, Link: {other_link}"
+                )
+                await Actor.push_data(
+                    {
+                        "companyName": companyName,
+                        "affiliatedInstitution": "",
+                        "companySolution": companySolution,
+                        "companyWebsite": companyWebsite,
+                        "otherLink": other_link,
+                    }
+                )
+            except Exception as e:
+                Actor.log.exception(f"Error pushing results: {e}")
 
         driver.quit()

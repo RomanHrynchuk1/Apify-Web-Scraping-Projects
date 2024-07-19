@@ -7,8 +7,8 @@ To build Apify Actors, utilize the Apify SDK toolkit, read more at the official 
 https://docs.apify.com/sdk/python
 """
 
-import time
-from urllib.parse import urljoin
+# import time
+# from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
 from httpx import AsyncClient, HTTPStatusError, RequestError
