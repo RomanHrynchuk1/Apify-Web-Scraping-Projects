@@ -72,8 +72,11 @@ async def main() -> None:
             Actor.log.critical("Can't find the list elements.")
         
         for otherLink in otherLinks:
-            response = await get_response(otherLink)
-            soup = BeautifulSoup(response.content, "html.parser")
+            try:
+                response = await get_response(otherLink)
+                soup = BeautifulSoup(response.content, "html.parser")
+            except:
+                continue
             
             companyName, companySolution, companyWebsite = None, None, None
 
