@@ -15,6 +15,7 @@ from bs4 import BeautifulSoup
 from httpx import AsyncClient
 
 from apify import Actor
+from apify_shared.consts import ActorExitCodes
 
 
 BASE_URL = "https://www.avx.io/sectors/physical-sciences"
@@ -32,70 +33,30 @@ async def main() -> None:
         # start_urls = actor_input.get('start_urls', [{'url': 'https://apify.com'}])
         # max_depth = actor_input.get('max_depth', 1)
 
-        # if not start_urls:
-        #     Actor.log.info('No start URLs specified in actor input, exiting...')
-        #     await Actor.exit()
-
-        # # Enqueue the starting URLs in the default request queue
-        # default_queue = await Actor.open_request_queue()
-        # for start_url in start_urls:
-        #     url = start_url.get('url')
-        #     Actor.log.info(f'Enqueuing {url} ...')
-        #     await default_queue.add_request({'url': url, 'userData': {'depth': 0}})
-
-        # # Process the requests in the queue one by one
-        # while request := await default_queue.fetch_next_request():
-        #     url = request['url']
-        #     depth = request['userData']['depth']
-        #     Actor.log.info(f'Scraping {url} ...')
-
-        #     try:
-        #         # Fetch the URL using `httpx`
-        #         async with AsyncClient() as client:
-        #             response = await client.get(url, follow_redirects=True)
-
-        #         # Parse the response using `BeautifulSoup`
-        #         soup = BeautifulSoup(response.content, 'html.parser')
-
-        #         # If we haven't reached the max depth,
-        #         # look for nested links and enqueue their targets
-        #         if depth < max_depth:
-        #             for link in soup.find_all('a'):
-        #                 link_href = link.get('href')
-        #                 link_url = urljoin(url, link_href)
-        #                 if link_url.startswith(('http://', 'https://')):
-        #                     Actor.log.info(f'Enqueuing {link_url} ...')
-        #                     await default_queue.add_request({
-        #                         'url': link_url,
-        #                         'userData': {'depth': depth + 1},
-        #                     })
-
-        #         # Push the title of the page into the default dataset
-        #         title = soup.title.string if soup.title else None
-        #         await Actor.push_data({'url': url, 'title': title})
-        #     except Exception:
-        #         Actor.log.exception(f'Cannot extract data from {url}.')
-        #     finally:
-        #         # Mark the request as handled so it's not processed again
-        #         await default_queue.mark_request_as_handled(request)
-
-
         # Fetch the content from the URL
-        async with AsyncClient() as client:
-            response = await client.get(BASE_URL, follow_redirects=True)
+        try:
+            async with AsyncClient() as client:
+                response = await client.get(BASE_URL, follow_redirects=True)
+                response.raise_for_status()
+        except:
+            e = Exception("The website is changed!")
+            await Actor.fail(exit_code=ActorExitCodes.ERROR_USER_FUNCTION_THREW, exception=e)
+            return
 
         # Parse the HTML content
         soup = BeautifulSoup(response.content, 'html.parser')
 
         # Select all the elements that match the CSS selector
         elements_list = soup.select("body > div.section > div > div.venture-list > div > div.w-dyn-items > div")
+        
+        Names, Solutions, Websites, Institutions = False, False, False, False
 
         # Iterate over each element in the list
         for element in elements_list:
             try:
                 # Extract company name
                 company_name_element = element.select_one("h4.venture-title")
-                companyName = company_name_element.text.strip() if company_name_element else "N/A"
+                companyName = company_name_element.text.strip() if company_name_element else ""
 
                 # Extract affiliated institution
                 affiliated_institution_element = element.select_one("div.sub-category-text")
@@ -104,15 +65,12 @@ async def main() -> None:
                     if
                     affiliated_institution_element
                     else
-                    "N/A"
+                    ""
                 )
-
-                # Initialize company observations (empty string)
-                companyObservations = ""
 
                 # Extract company solution
                 company_solution_element = element.select_one("p.paragraph-4")
-                companySolution = company_solution_element.text.strip() if company_solution_element else "N/A"
+                companySolution = company_solution_element.text.strip() if company_solution_element else ""
 
                 # Extract company website
                 website_img_elements = element.select('img[src*=Homepage]')
@@ -124,11 +82,11 @@ async def main() -> None:
 
                 # Extract other link
                 venture_wrapper_element = element.select_one("a.venture-wrapper")
-                otherLink = urljoin(BASE_URL, venture_wrapper_element['href']) if venture_wrapper_element else "N/A"
+                otherLink = urljoin(BASE_URL, venture_wrapper_element['href']) if venture_wrapper_element else ""
 
                 # Print the extracted information
                 Actor.log.info(f"Company Name: {companyName}, Affiliated Institution: {affiliatedInstitution}, "
-                    f"Company Solution: {companySolution[:20]}..., Company Observations: {companyObservations}, "
+                    f"Company Solution: {companySolution[:20]}..., "
                     f"Company Website: {companyWebsite}, Other Link: {otherLink}")
                 
                 await Actor.push_data(
@@ -136,15 +94,21 @@ async def main() -> None:
                         "companyName": companyName,
                         "affiliatedInstitution": affiliatedInstitution,
                         "companySolution": companySolution,
-                        "companyObservations": companyObservations,
                         "companyWebsite": companyWebsite,
                         "otherLink": otherLink,
                     }
                 )
 
+                Names = True if companyName else Names
+                Solutions = True if companySolution else Solutions
+                Websites = True if companyWebsite else Websites
+                Institutions = True if affiliatedInstitution else Institutions
+
             except Exception as ex:
                 # Handle exceptions and print an error message
                 Actor.log.exception(f'Error {str(ex)}.\n{traceback.format_exc()}')
-            
-            finally:
-                ""
+
+                
+        if not (Names and Solutions and Websites and Institutions):
+            e = Exception("The website is changed!")
+            await Actor.fail(exit_code=ActorExitCodes.ERROR_USER_FUNCTION_THREW, exception=e)

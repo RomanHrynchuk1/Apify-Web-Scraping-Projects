@@ -22,6 +22,7 @@ from selenium.webdriver.common.by import By
 # )
 
 from apify import Actor
+from apify_shared.consts import ActorExitCodes
 
 # To run this Actor locally, you need to have the Selenium Chromedriver installed.
 # https://www.selenium.dev/documentation/webdriver/getting_started/install_drivers/
@@ -68,10 +69,10 @@ async def main() -> None:
         try:
             driver.get(start_url)
             time.sleep(3)
-        except Exception as e:
-            Actor.log.exception(
-                f"An error occurred while navigating to the start URL: {e}"
-            )
+        except:
+            e = Exception("The website is changed!")
+            await Actor.fail(exit_code=ActorExitCodes.ERROR_USER_FUNCTION_THREW, exception=e)
+            return
 
         # Attempt to click the cookie consent button with try-except
         try:
@@ -102,6 +103,7 @@ async def main() -> None:
                 Actor.log.warn(f"End of page or an error occurred. Found {len(otherLinks)} companies. Error: {ex}")
                 break
 
+        Names, Solutions, Websites, Institutions = False, False, False, False
 
         for otherLink in otherLinks:
             try:
@@ -111,34 +113,34 @@ async def main() -> None:
                 try:
                     companyName = driver.find_element(By.CSS_SELECTOR, "h2.entry-title").text.strip()
                 except Exception as e:
-                    companyName = "N/A"
+                    companyName = ""
                     Actor.log.exception(f"Error retrieving company name: {e}")
 
                 try:
                     companySolution = driver.find_element(By.CSS_SELECTOR, "div.post-content p").text.strip()
                 except Exception as e:
-                    companySolution = "N/A"
+                    companySolution = ""
                     Actor.log.warn(f"Error retrieving company solution: {e}")
 
                 try:
                     companyWebsite_dummy = driver.find_elements(By.CSS_SELECTOR, 'div.inline-field')
-                    companyWebsite = "#"
+                    companyWebsite = ""
                     for dummy in companyWebsite_dummy:
                         try:
                             if dummy.find_element(By.CSS_SELECTOR, "span.label").text.strip().lower() == "website:":
-                                companyWebsite = dummy.find_element(By.CSS_SELECTOR, "span.content a").get_attribute('href') or "#"
+                                companyWebsite = dummy.find_element(By.CSS_SELECTOR, "span.content a").get_attribute('href') or ""
                                 break
                         except Exception as e:
                             Actor.log.exception(f"Error processing company website dummy element: {e}")
-                    if companyWebsite == "#":
+                    if companyWebsite == "":
                         Actor.log.warn(f"Error retrieving company website: {e}")
                 except Exception as e:
-                    companyWebsite = "#"
+                    companyWebsite = ""
                     Actor.log.warn(f"Error retrieving company website: {e}")
 
-                companyName = companyName or "N/A"
-                companySolution = companySolution or "N/A"
-                companyWebsite = companyWebsite or "#"
+                companyName = companyName or ""
+                companySolution = companySolution or ""
+                companyWebsite = companyWebsite or ""
                 
                 try:
                     Actor.log.info(
@@ -147,12 +149,17 @@ async def main() -> None:
                     await Actor.push_data(
                         {
                             "companyName": companyName,
-                            "affiliatedInstitution": "N/A",
+                            "affiliatedInstitution": "",
                             "companySolution": companySolution,
                             "companyWebsite": companyWebsite,
                             "otherLink": otherLink,
                         }
                     )
+                    
+                    Names = True if companyName else Names
+                    Solutions = True if companySolution else Solutions
+                    Websites = True if companyWebsite else Websites
+
                 except Exception as e:
                     Actor.log.exception(f"Error pushing results: {e}")
 
@@ -160,4 +167,7 @@ async def main() -> None:
                 Actor.log.exception(f"Error navigating to {otherLink}: {e}")
                 
         driver.quit()
-
+        
+        if not (Names and Solutions and Websites):
+            e = Exception("The website is changed!")
+            await Actor.fail(exit_code=ActorExitCodes.ERROR_USER_FUNCTION_THREW, exception=e)

@@ -22,6 +22,7 @@ from selenium.webdriver.common.by import By
 # )
 
 from apify import Actor
+from apify_shared.consts import ActorExitCodes
 
 # To run this Actor locally, you need to have the Selenium Chromedriver installed.
 # https://www.selenium.dev/documentation/webdriver/getting_started/install_drivers/
@@ -67,6 +68,8 @@ async def main() -> None:
         assert driver.title == "Example Domain"
         
         companyNames = []
+        
+        Names, Solutions, Websites, Institutions = False, False, False, False
 
         for start_url_obj in start_urls:
             start_url = start_url_obj['url']
@@ -86,7 +89,7 @@ async def main() -> None:
                 try:
                     companyName = company_info.find_element(By.TAG_NAME, "h2").text.strip()
                 except Exception as e:
-                    companyName = "N/A"
+                    companyName = ""
                     Actor.log.exception(f"Error retrieving company name: {e}")
 
                 companySolution_list = []
@@ -96,20 +99,20 @@ async def main() -> None:
                             companySolution_list.append(element.text.strip())
                     companySolution = "\n".join(companySolution_list).strip()
                 except Exception as e:
-                    companySolution = "N/A"
+                    companySolution = ""
                     Actor.log.exception(f"Error retrieving company solution: {e}")
 
                 try:
                     companyWebsite = company_info.find_element(By.CSS_SELECTOR, "a.callout-link").get_attribute('href')
                 except Exception as e:
-                    companyWebsite = "#"
+                    companyWebsite = ""
                     Actor.log.warn(f"Error retrieving company website: {e}")
 
-                companyName = companyName or "N/A"
-                companySolution = companySolution or "N/A"
-                companyWebsite = companyWebsite or "#"
+                companyName = companyName or ""
+                companySolution = companySolution or ""
+                companyWebsite = companyWebsite or ""
                 
-                if companyName != "N/A" and companyName in companyNames:
+                if companyName != "" and companyName in companyNames:
                     continue
                 companyNames.append(companyName)
                 
@@ -120,14 +123,22 @@ async def main() -> None:
                     await Actor.push_data(
                         {
                             "companyName": companyName,
-                            "affiliatedInstitution": "N/A",
+                            "affiliatedInstitution": "",
                             "companySolution": companySolution,
                             "companyWebsite": companyWebsite,
-                            "otherLink": "#",
+                            "otherLink": "",
                         }
                     )
+                    
+                    Names = True if companyName else Names
+                    Solutions = True if companySolution else Solutions
+                    Websites = True if companyWebsite else Websites
+
                 except Exception as e:
                     Actor.log.exception(f"Error pushing results: {e}")
 
         driver.quit()
         
+        if not (Names and Solutions and Websites):
+            e = Exception("The website is changed!")
+            await Actor.fail(exit_code=ActorExitCodes.ERROR_USER_FUNCTION_THREW, exception=e)

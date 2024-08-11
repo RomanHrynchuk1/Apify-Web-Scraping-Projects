@@ -22,6 +22,7 @@ from selenium.common.exceptions import (
 )
 
 from apify import Actor
+from apify_shared.consts import ActorExitCodes
 
 # To run this Actor locally, you need to have the Selenium Chromedriver installed.
 # https://www.selenium.dev/documentation/webdriver/getting_started/install_drivers/
@@ -89,12 +90,10 @@ async def main() -> None:
             try:
                 driver.get(start_url["url"])
                 time.sleep(3)
-            except TimeoutException as e:
-                Actor.log.exception(f"Timeout while trying to load the page: {e}")
-            except NoSuchElementException as e:
-                Actor.log.exception(f"Element not found: {e}")
-            except WebDriverException as e:
-                Actor.log.exception(f"WebDriver error: {e}")
+            except:
+                e = Exception("The website is changed!")
+                await Actor.fail(exit_code=ActorExitCodes.ERROR_USER_FUNCTION_THREW, exception=e)
+                return
 
             try:
                 other_links = [element.get_attribute('href') for element in driver.find_elements(By.XPATH, "//div[@id='companies-container']/div[@class='unit']/a")]
@@ -106,6 +105,7 @@ async def main() -> None:
             except Exception as e:
                 Actor.log.exception(f"An unexpected error occurred: {e}")
                 
+        Names, Solutions, Websites, Institutions = False, False, False, False
                 
         for otherLink in otherLinks:
             try:
@@ -123,41 +123,41 @@ async def main() -> None:
                 companyName = driver.find_element(By.CSS_SELECTOR, "div.article-body > h2").text
             except NoSuchElementException as e:
                 Actor.log.info(f"Company name element not found: {e}")
-                companyName = "N/A"
+                companyName = ""
             except WebDriverException as e:
                 Actor.log.exception(f"WebDriver error while finding company name: {e}")
-                companyName = "N/A"
+                companyName = ""
             except Exception as e:
                 Actor.log.exception(f"An unexpected error occurred: {e}")
-                companyName = "N/A"
+                companyName = ""
 
             try:
                 companySolution_elements = driver.find_elements(By.CSS_SELECTOR, "div.article-body > p")
                 if companySolution_elements:
                     companySolution = "\n".join([solution.text.strip() for solution in companySolution_elements[1:]])
                 else:
-                    companySolution = "N/A"
+                    companySolution = ""
             except NoSuchElementException as e:
                 Actor.log.info(f"Company solution elements not found: {e}")
-                companySolution = "N/A"
+                companySolution = ""
             except WebDriverException as e:
                 Actor.log.exception(f"WebDriver error while finding company solution elements: {e}")
-                companySolution = "N/A"
+                companySolution = ""
             except Exception as e:
                 Actor.log.exception(f"An unexpected error occurred: {e}")
-                companySolution = "N/A"
+                companySolution = ""
 
             try:
                 companyWebsite = driver.find_element(By.CSS_SELECTOR, "a.company-website-link").get_attribute('href')
             except NoSuchElementException as e:
                 Actor.log.info(f"Company website element not found: {e}")
-                companyWebsite = "#"
+                companyWebsite = ""
             except WebDriverException as e:
                 Actor.log.exception(f"WebDriver error while finding company website: {e}")
-                companyWebsite = "#"
+                companyWebsite = ""
             except Exception as e:
                 Actor.log.exception(f"An unexpected error occurred: {e}")
-                companyWebsite = "#"
+                companyWebsite = ""
 
             try:
                 Actor.log.info(
@@ -172,8 +172,16 @@ async def main() -> None:
                         "otherLink": otherLink,
                     }
                 )
+                
+                Names = True if companyName else Names
+                Solutions = True if companySolution else Solutions
+                Websites = True if companyWebsite else Websites
+
             except Exception as e:
                 Actor.log.exception(f"Error pushing results: {e}")
 
         driver.quit()
         
+        if not (Names and Solutions and Websites):
+            e = Exception("The website is changed!")
+            await Actor.fail(exit_code=ActorExitCodes.ERROR_USER_FUNCTION_THREW, exception=e)

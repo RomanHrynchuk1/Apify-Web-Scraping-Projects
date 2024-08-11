@@ -17,6 +17,7 @@ from selenium.webdriver.common.by import By
 from selenium.common.exceptions import NoSuchElementException, WebDriverException
 
 from apify import Actor
+from apify_shared.consts import ActorExitCodes
 
 # To run this Actor locally, you need to have the Selenium Chromedriver installed.
 # https://www.selenium.dev/documentation/webdriver/getting_started/install_drivers/
@@ -72,43 +73,18 @@ async def main() -> None:
         driver.get('http://www.example.com')
         assert driver.title == 'Example Domain'
 
-        # # Process the requests in the queue one by one
-        # while request := await default_queue.fetch_next_request():
-        #     url = request['url']
-        #     depth = request['userData']['depth']
-        #     Actor.log.info(f'Scraping {url} ...')
-
-        #     try:
-        #         # Open the URL in the Selenium WebDriver
-        #         driver.get(url)
-
-        #         # If we haven't reached the max depth,
-        #         # look for nested links and enqueue their targets
-        #         if depth < max_depth:
-        #             for link in driver.find_elements(By.TAG_NAME, 'a'):
-        #                 link_href = link.get_attribute('href')
-        #                 link_url = urljoin(url, link_href)
-        #                 if link_url.startswith(('http://', 'https://')):
-        #                     Actor.log.info(f'Enqueuing {link_url} ...')
-        #                     await default_queue.add_request({
-        #                         'url': link_url,
-        #                         'userData': {'depth': depth + 1},
-        #                     })
-
-        #         # Push the title of the page into the default dataset
-        #         title = driver.title
-        #         await Actor.push_data({'url': url, 'title': title})
-        #     except Exception:
-        #         Actor.log.exception(f'Cannot extract data from {url}.')
-        #     finally:
-        #         await default_queue.mark_request_as_handled(request)
-
         result_urls = set()
         
         for URL in BASE_URL_LIST:
             Actor.log.info(f"Working on {URL['url']}")
-            driver.get(URL["url"])
-            time.sleep(10)
+        
+            try:
+                driver.get(url=URL["url"])
+                time.sleep(10)
+            except:
+                e = Exception("The website is changed!")
+                await Actor.fail(exit_code=ActorExitCodes.ERROR_USER_FUNCTION_THREW, exception=e)
+                return
 
             try:
                 driver.find_element(By.CLASS_NAME, 'pum-close').click()
@@ -150,6 +126,8 @@ async def main() -> None:
                 result_urls.add(href)
 
         result_urls = list(result_urls)
+        
+        Names, Solutions, Websites, Institutions = False, False, False, False
 
         for page_url in result_urls:
             driver.get(page_url)
@@ -158,22 +136,22 @@ async def main() -> None:
             try:
                 companyName = driver.find_element(By.CLASS_NAME, "indiebio-company__title").text.strip()
             except NoSuchElementException:
-                companyName = "N/A"
+                companyName = ""
                 Actor.log.exception("Company name element not found")
 
             try:
                 companySolution = driver.find_element(By.CLASS_NAME, "indiebio-company__tagline").text.strip()
             except NoSuchElementException:
-                companySolution = "N/A"
+                companySolution = ""
                 Actor.log.exception("Company solution element not found")
 
             try:
                 companyWebsite = driver.find_element(By.CSS_SELECTOR, "a.indiebio-company__website").get_attribute('href')
             except NoSuchElementException:
-                companyWebsite = "#"
+                companyWebsite = ""
                 Actor.log.exception("Company website element not found")
             except WebDriverException as e:
-                companyWebsite = "#"
+                companyWebsite = ""
                 Actor.log.exception(f"WebDriverException occurred: {e}")
             
             # print(f"Name: {companyName}, Solution: {companySolution}, Website: {companyWebsite}, otherLink: {page_url}")
@@ -181,7 +159,16 @@ async def main() -> None:
             try:
                 Actor.log.info(f"Name: {companyName}, Solution: {companySolution}, Website: {companyWebsite}, Link: {page_url}")
                 await Actor.push_data({"companyName": companyName, "affiliatedInstitution":"", "companySolution": companySolution, "companyWebsite": companyWebsite, "otherLink": page_url})
+                
+                Names = True if companyName else Names
+                Solutions = True if companySolution else Solutions
+                Websites = True if companyWebsite else Websites
+                
             except Exception as e:
                 print(f"Error pushing results: {e}")
 
         driver.quit()
+        
+        if not (Names and Solutions and Websites and Institutions):
+            e = Exception("The website is changed!")
+            await Actor.fail(exit_code=ActorExitCodes.ERROR_USER_FUNCTION_THREW, exception=e)

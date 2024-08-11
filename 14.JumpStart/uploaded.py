@@ -22,6 +22,7 @@ from selenium.webdriver.common.by import By
 # )
 
 from apify import Actor
+from apify_shared.consts import ActorExitCodes
 
 # To run this Actor locally, you need to have the Selenium Chromedriver installed.
 # https://www.selenium.dev/documentation/webdriver/getting_started/install_drivers/
@@ -68,10 +69,9 @@ async def main() -> None:
         try:
             driver.get(start_url)
             time.sleep(8)
-        except Exception as e:
-            Actor.log.exception(
-                f"An error occurred while navigating to the start URL: {e}"
-            )
+        except:
+            e = Exception("The website is changed!")
+            await Actor.fail(exit_code=ActorExitCodes.ERROR_USER_FUNCTION_THREW, exception=e)
             return
 
         driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
@@ -91,6 +91,8 @@ async def main() -> None:
             except Exception as e:
                 # Handle the exception (print the error, log it, etc.)
                 Actor.log.exception(f"Error occurred while processing an element: {e}")
+        
+        Names, Solutions, Websites, Institutions = False, False, False, False
 
         for otherLink in otherLinks:
             try:
@@ -118,9 +120,9 @@ async def main() -> None:
                 except Exception as e:
                     Actor.log.warn(f"Error occurred while getting company website: {e}")
 
-                companyName = companyName or "N/A"
-                companySolution = companySolution or "N/A"
-                companyWebsite = companyWebsite or "#"
+                companyName = companyName or ""
+                companySolution = companySolution or ""
+                companyWebsite = companyWebsite or ""
                 
                 try:
                     Actor.log.info(
@@ -129,12 +131,17 @@ async def main() -> None:
                     await Actor.push_data(
                         {
                             "companyName": companyName,
-                            "affiliatedInstitution": "N/A",
+                            "affiliatedInstitution": "",
                             "companySolution": companySolution,
                             "companyWebsite": companyWebsite,
                             "otherLink": otherLink,
                         }
                     )
+
+                    Names = True if companyName else Names
+                    Solutions = True if companySolution else Solutions
+                    Websites = True if companyWebsite else Websites
+
                 except Exception as e:
                     Actor.log.exception(f"Error pushing results: {e}")
                 
@@ -142,3 +149,7 @@ async def main() -> None:
                 Actor.log.exception(f"Error occurred while processing the link {otherLink}: {e}")
                 
         driver.quit()
+
+        if not (Names and Solutions and Websites):
+            e = Exception("The website is changed!")
+            await Actor.fail(exit_code=ActorExitCodes.ERROR_USER_FUNCTION_THREW, exception=e)

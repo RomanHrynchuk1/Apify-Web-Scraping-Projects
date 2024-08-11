@@ -22,6 +22,7 @@ from selenium.common.exceptions import (
 )
 
 from apify import Actor
+from apify_shared.consts import ActorExitCodes
 
 # To run this Actor locally, you need to have the Selenium Chromedriver installed.
 # https://www.selenium.dev/documentation/webdriver/getting_started/install_drivers/
@@ -92,12 +93,10 @@ async def main() -> None:
             try:
                 driver.get(start_url["url"])
                 time.sleep(3)
-            except TimeoutException as e:
-                Actor.log.exception(f"Timeout while trying to load the page: {e}")
-            except NoSuchElementException as e:
-                Actor.log.exception(f"Element not found: {e}")
-            except WebDriverException as e:
-                Actor.log.exception(f"WebDriver error: {e}")
+            except:
+                e = Exception("The website is changed!")
+                await Actor.fail(exit_code=ActorExitCodes.ERROR_USER_FUNCTION_THREW, exception=e)
+                return
 
             try:
                 # Locate the host element
@@ -189,6 +188,8 @@ async def main() -> None:
         chrome_options.add_experimental_option("prefs", {'profile.managed_default_content_settings.javascript': 2})
         driver = webdriver.Chrome(options=chrome_options)
         
+        Names, Solutions, Websites, Institutions = False, False, False, False
+        
         for other_link in otherLinks_final:
 
             try:
@@ -209,12 +210,12 @@ async def main() -> None:
                 ).text
             except NoSuchElementException as e:
                 Actor.log.info(f"Company name element not found: {e}")
-                companyName = "N/A"
+                companyName = ""
             except WebDriverException as e:
                 Actor.log.exception(
                     f"WebDriver error while finding company name: {e}"
                 )
-                companyName = "N/A"
+                companyName = ""
 
             try:
                 companySolutionList1 = driver.find_elements(
@@ -236,12 +237,12 @@ async def main() -> None:
                     Actor.log.warning("Can't find the companySolution.")
             except NoSuchElementException as e:
                 Actor.log.info(f"Fallback company solution element not found: {e}")
-                companySolution = "N/A"
+                companySolution = ""
             except WebDriverException as e:
                 Actor.log.exception(
                     f"WebDriver error while finding fallback company solution: {e}"
                 )
-                companySolution = "N/A"
+                companySolution = ""
             except Exception as e:
                 Actor.log.exception(f"An unexpected error occurred: {e}")
 
@@ -252,12 +253,12 @@ async def main() -> None:
                 ).get_attribute("href")
             except NoSuchElementException as e:
                 Actor.log.info(f"Company website element not found: {e}")
-                companyWebsite = "#"
+                companyWebsite = ""
             except WebDriverException as e:
-                Actor.log.exception(
+                Actor.log.warning(
                     f"WebDriver error while finding company website: {e}"
                 )
-                companyWebsite = "#"
+                companyWebsite = ""
 
             try:
                 Actor.log.info(
@@ -272,7 +273,16 @@ async def main() -> None:
                         "otherLink": other_link,
                     }
                 )
+                
+                Names = True if companyName else Names
+                Solutions = True if companySolution else Solutions
+                Websites = True if companyWebsite else Websites
+
             except Exception as e:
                 Actor.log.exception(f"Error pushing results: {e}")
 
         driver.quit()
+
+        if not (Names and Solutions and Websites):
+            e = Exception("The website is changed!")
+            await Actor.fail(exit_code=ActorExitCodes.ERROR_USER_FUNCTION_THREW, exception=e)

@@ -22,6 +22,7 @@ from selenium.webdriver.common.by import By
 # )
 
 from apify import Actor
+from apify_shared.consts import ActorExitCodes
 
 # To run this Actor locally, you need to have the Selenium Chromedriver installed.
 # https://www.selenium.dev/documentation/webdriver/getting_started/install_drivers/
@@ -69,10 +70,10 @@ async def main() -> None:
         try:
             driver.get(start_url)
             time.sleep(5)
-        except Exception as e:
-            Actor.log.exception(
-                f"An error occurred while navigating to the start URL: {e}"
-            )
+        except:
+            e = Exception("The website is changed!")
+            await Actor.fail(exit_code=ActorExitCodes.ERROR_USER_FUNCTION_THREW, exception=e)
+            return
 
         # Attempt to click the cookie consent button with try-except
         try:
@@ -97,7 +98,7 @@ async def main() -> None:
             )
 
         otherLinks = []
-
+        
         while True:
             try:
                 new_link_elements = driver.find_elements(
@@ -123,6 +124,8 @@ async def main() -> None:
                 )
                 break
 
+        Names, Solutions, Websites, Institutions = False, False, False, False
+
         for otherLink in otherLinks:
             driver.get(otherLink)
             time.sleep(0.3)
@@ -132,7 +135,7 @@ async def main() -> None:
                     By.CSS_SELECTOR, "h4.green"
                 ).text.strip()
             except Exception as ex:
-                companyName = "N/A"
+                companyName = ""
                 Actor.log.warn(f"Error retrieving companyName: {ex}")
 
             try:
@@ -140,7 +143,7 @@ async def main() -> None:
                     By.CSS_SELECTOR, "div.text"
                 ).text.strip()
             except Exception as ex:
-                companySolution = "N/A"
+                companySolution = ""
                 Actor.log.warn(f"Error retrieving companySolution: {ex}")
 
             try:
@@ -148,7 +151,7 @@ async def main() -> None:
                     By.CSS_SELECTOR, "div.item--block a.button__standard"
                 ).get_attribute("href")
             except Exception as ex:
-                companyWebsite = "#"
+                companyWebsite = ""
                 Actor.log.warn(f"Error retrieving companyWebsite: {ex}")
 
             try:
@@ -158,13 +161,23 @@ async def main() -> None:
                 await Actor.push_data(
                     {
                         "companyName": companyName,
-                        "affiliatedInstitution": "N/A",
+                        "affiliatedInstitution": "",
                         "companySolution": companySolution,
                         "companyWebsite": companyWebsite,
                         "otherLink": otherLink,
                     }
                 )
+                
+                Names = True if companyName else Names
+                Solutions = True if companySolution else Solutions
+                Websites = True if companyWebsite else Websites
+
             except Exception as e:
                 Actor.log.exception(f"Error pushing results: {e}")
 
         driver.quit()
+
+        if not (Names and Solutions and Websites):
+            e = Exception("The website is changed!")
+            await Actor.fail(exit_code=ActorExitCodes.ERROR_USER_FUNCTION_THREW, exception=e)
+            

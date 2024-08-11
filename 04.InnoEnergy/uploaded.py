@@ -18,6 +18,7 @@ from selenium.webdriver.common.by import By
 from selenium.common.exceptions import TimeoutException, NoSuchElementException, WebDriverException
 
 from apify import Actor
+from apify_shared.consts import ActorExitCodes
 
 # To run this Actor locally, you need to have the Selenium Chromedriver installed.
 # https://www.selenium.dev/documentation/webdriver/getting_started/install_drivers/
@@ -85,47 +86,18 @@ async def main() -> None:
         driver.get('http://www.example.com')
         assert driver.title == 'Example Domain'
 
-        # # Process the requests in the queue one by one
-        # while request := await default_queue.fetch_next_request():
-        #     url = request['url']
-        #     depth = request['userData']['depth']
-        #     Actor.log.info(f'Scraping {url} ...')
-
-        #     try:
-        #         # Open the URL in the Selenium WebDriver
-        #         driver.get(url)
-
-        #         # If we haven't reached the max depth,
-        #         # look for nested links and enqueue their targets
-        #         if depth < max_depth:
-        #             for link in driver.find_elements(By.TAG_NAME, 'a'):
-        #                 link_href = link.get_attribute('href')
-        #                 link_url = urljoin(url, link_href)
-        #                 if link_url.startswith(('http://', 'https://')):
-        #                     Actor.log.info(f'Enqueuing {link_url} ...')
-        #                     await default_queue.add_request({
-        #                         'url': link_url,
-        #                         'userData': {'depth': depth + 1},
-        #                     })
-
-        #         # Push the title of the page into the default dataset
-        #         title = driver.title
-        #         await Actor.push_data({'url': url, 'title': title})
-        #     except Exception:
-        #         Actor.log.exception(f'Cannot extract data from {url}.')
-        #     finally:
-        #         await default_queue.mark_request_as_handled(request)
 
         base_url = start_urls[0]["url"]
 
         Actor.log.info(base_url)
+
         try:
-            driver.get(base_url)
+            driver.get(url=base_url)
             time.sleep(3)
-        except TimeoutException:
-            print(f"Page load timed out while trying to navigate to {base_url}")
-        except WebDriverException as e:
-            print(f"WebDriverException occurred while trying to navigate to {base_url}: {e}")
+        except:
+            e = Exception("The website is changed!")
+            await Actor.fail(exit_code=ActorExitCodes.ERROR_USER_FUNCTION_THREW, exception=e)
+            return
 
         try:
             driver.find_element(By.ID, "CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll").click()
@@ -176,6 +148,8 @@ async def main() -> None:
 
             other_link_list.extend(otherLinks)
         
+        Names, Solutions, Websites, Institutions = False, False, False, False
+        
         for otherLink in other_link_list:
 
             Actor.log.info(f"Other Link: {otherLink}")
@@ -191,35 +165,44 @@ async def main() -> None:
             try:
                 companyName = driver.find_element(By.CSS_SELECTOR, "h1[class^='HeroProduct_title']").text.strip()
             except NoSuchElementException:
-                companyName = "N/A"
+                companyName = ""
                 Actor.log.exception("Company name element not found")
             except WebDriverException as e:
-                companyName = "N/A"
+                companyName = ""
                 Actor.log.exception(f"WebDriverException occurred while fetching company name: {e}")
 
             try:
                 companySolution = driver.find_element(By.CSS_SELECTOR, "div[class^='HeroProduct_description']").text.strip()
             except NoSuchElementException:
-                companySolution = "N/A"
-                Actor.log.exception("Company solution element not found")
+                companySolution = ""
+                Actor.log.warning("Company solution element not found")
             except WebDriverException as e:
-                companySolution = "N/A"
-                Actor.log.exception(f"WebDriverException occurred while fetching company solution: {e}")
+                companySolution = ""
+                Actor.log.warning(f"WebDriverException occurred while fetching company solution: {e}")
 
             try:
                 companyWebsite = driver.find_element(By.CSS_SELECTOR, "a[class^='CommercializedBy_url']").get_attribute('href')
                 companyWebsite = clean_url(companyWebsite)
             except NoSuchElementException:
-                companyWebsite = "#"
-                Actor.log.exception("Company website element not found")
+                companyWebsite = ""
+                Actor.log.warning("Company website element not found")
             except WebDriverException as e:
-                companyWebsite = "#"
-                Actor.log.exception(f"WebDriverException occurred while fetching company website: {e}")
+                companyWebsite = ""
+                Actor.log.warning(f"WebDriverException occurred while fetching company website: {e}")
 
             try:
                 Actor.log.info(f"Name: {companyName}, Solution: {companySolution}, Website: {companyWebsite}, Link: {otherLink}")
                 await Actor.push_data({"companyName": companyName, "affiliatedInstitution":"", "companySolution": companySolution, "companyWebsite": companyWebsite, "otherLink": otherLink})
+                
+                Names = True if companyName else Names
+                Solutions = True if companySolution else Solutions
+                Websites = True if companyWebsite else Websites
+                
             except Exception as e:
                 Actor.log.exception(f"Error pushing results: {e}")
 
         driver.quit()
+        
+        if not (Names and Solutions and Websites):
+            e = Exception("The website is changed!")
+            await Actor.fail(exit_code=ActorExitCodes.ERROR_USER_FUNCTION_THREW, exception=e)

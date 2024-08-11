@@ -24,6 +24,7 @@ from bs4 import BeautifulSoup
 # )
 
 from apify import Actor
+from apify_shared.consts import ActorExitCodes
 
 # To run this Actor locally, you need to have the Selenium Chromedriver installed.
 # https://www.selenium.dev/documentation/webdriver/getting_started/install_drivers/
@@ -70,10 +71,9 @@ async def main() -> None:
         try:
             driver.get(start_url)
             time.sleep(3)
-        except Exception as e:
-            Actor.log.exception(
-                f"An error occurred while navigating to the start URL: {e}"
-            )
+        except:
+            e = Exception("The website is changed!")
+            await Actor.fail(exit_code=ActorExitCodes.ERROR_USER_FUNCTION_THREW, exception=e)
             return
 
         page_source = driver.page_source
@@ -82,30 +82,32 @@ async def main() -> None:
         
         elements = soup.select("div.cards__card__back")
         
+        Names, Solutions, Websites, Institutions = False, False, False, False
+        
         for element in elements:
             try:
                 companyName = element.select_one("h1").text.strip()
             except Exception as e:
                 Actor.log.exception(f"An error occurred while extracting companyName: {e}")
-                companyName = "N/A"
+                companyName = ""
             
             try:
                 companySolution = element.select_one("p:not(.cards__card__lower__bottom__institution):not(.cards__card__back__website)").text.strip()
             except Exception as e:
                 Actor.log.warn(f"An error occurred while extracting companySolution: {e}")
-                companySolution = "N/A"
+                companySolution = ""
             
             try:
                 companyWebsite = element.select_one("p.cards__card__back__website a").get('href')
             except Exception as e:
                 Actor.log.warn(f"An error occurred while extracting companyWebsite: {e}")
-                companyWebsite = "#"
+                companyWebsite = ""
             
             try:
                 affiliatedInstitution = element.select_one("p.cards__card__lower__bottom__institution").text.strip()
             except Exception as e:
                 Actor.log.warn(f"An error occurred while extracting affiliatedInstitution: {e}")
-                affiliatedInstitution = "N/A"
+                affiliatedInstitution = ""
             
             try:
                 Actor.log.info(
@@ -117,10 +119,20 @@ async def main() -> None:
                         "affiliatedInstitution": affiliatedInstitution,
                         "companySolution": companySolution,
                         "companyWebsite": companyWebsite,
-                        "otherLink": "#",
+                        "otherLink": "",
                     }
                 )
+                
+                Names = True if companyName else Names
+                Solutions = True if companySolution else Solutions
+                Websites = True if companyWebsite else Websites
+                Institutions = True if affiliatedInstitution else Institutions
+
             except Exception as e:
                 Actor.log.exception(f"Error pushing results: {e}")
                 
         driver.quit()
+
+        if not (Names and Solutions and Websites and Institutions):
+            e = Exception("The website is changed!")
+            await Actor.fail(exit_code=ActorExitCodes.ERROR_USER_FUNCTION_THREW, exception=e)

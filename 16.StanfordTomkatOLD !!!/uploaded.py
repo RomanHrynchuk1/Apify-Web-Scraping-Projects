@@ -22,6 +22,7 @@ from selenium.webdriver.common.by import By
 # )
 
 from apify import Actor
+from apify_shared.consts import ActorExitCodes
 
 # To run this Actor locally, you need to have the Selenium Chromedriver installed.
 # https://www.selenium.dev/documentation/webdriver/getting_started/install_drivers/
@@ -71,8 +72,9 @@ async def main() -> None:
         try:
             driver.get(start_url)
             time.sleep(5)
-        except Exception as e:
-            Actor.log.exception(f"An error occurred while navigating to the start URL: {e}")
+        except:
+            e = Exception("The website is changed!")
+            await Actor.fail(exit_code=ActorExitCodes.ERROR_USER_FUNCTION_THREW, exception=e)
             return
             
         try:
@@ -100,6 +102,8 @@ async def main() -> None:
             """, element)
 
         companyNameList = []
+        
+        Names, Solutions, Websites, Institutions = False, False, False, False
 
         # Scroll down 400px at a time until the bottom is reached
         while True:
@@ -108,28 +112,28 @@ async def main() -> None:
                 element_list = element.find_elements(By.XPATH, ".//div[@role='presentation']/div/div")
                 if len(element_list) == 5:
                     try:
-                        companyName = element_list[2].text.strip() or "N/A"
+                        companyName = element_list[2].text.strip() or ""
                     except Exception as e:
                         Actor.log.exception(f"An error occurred while extracting companyName: {e}")
-                        companyName = "N/A"
+                        companyName = ""
+                    
+                    # try:
+                    #     otherLink = element_list[2].find_element(By.TAG_NAME, "a").get_attribute("href") or ""
+                    # except Exception as e:
+                    #     Actor.log.exception(f"An error occurred while extracting otherLink: {e}")
+                    #     otherLink = ""
                     
                     try:
-                        otherLink = element_list[2].find_element(By.TAG_NAME, "a").get_attribute("href") or "#"
-                    except Exception as e:
-                        Actor.log.exception(f"An error occurred while extracting otherLink: {e}")
-                        otherLink = "#"
-                    
-                    try:
-                        companySolution = element_list[3].find_element(By.CSS_SELECTOR, "div.cellContainer span").text.strip() or "N/A"
+                        companySolution = element_list[3].find_element(By.CSS_SELECTOR, "div.cellContainer span").text.strip() or ""
                     except Exception as e:
                         Actor.log.info(f"An error occurred while extracting companySolution: {e}")
-                        companySolution = "N/A"
+                        companySolution = ""
                     
                     try:
-                        companyWebsite = "#" # element_list[?].find_element(By.CSS_SELECTOR, "div.cellContainer").text.strip() or "#"
+                        companyWebsite = "" # element_list[?].find_element(By.CSS_SELECTOR, "div.cellContainer").text.strip() or ""
                     except Exception as e:
                         Actor.log.info(f"An error occurred while extracting companyWebsite: {e}")
-                        companyWebsite = "#"
+                        companyWebsite = ""
                         
                     if companyName in companyNameList:
                         continue
@@ -138,17 +142,22 @@ async def main() -> None:
                     
                     try:
                         Actor.log.info(
-                            f"Name: {companyName}, Solution: {companySolution}, Website: {companyWebsite}, Link: {otherLink}"
+                            f"Name: {companyName}, Solution: {companySolution}, Website: {companyWebsite}"
                         )
                         await Actor.push_data(
                             {
                                 "companyName": companyName,
-                                "affiliatedInstitution": "N/A",
+                                "affiliatedInstitution": "",
                                 "companySolution": companySolution,
                                 "companyWebsite": companyWebsite,
-                                "otherLink": otherLink,
+                                "otherLink": "",
                             }
                         )
+                        
+                        Names = True if companyName else Names
+                        Solutions = True if companySolution else Solutions
+                        # Websites = True if companyWebsite else Websites
+
                     except Exception as e:
                         Actor.log.exception(f"Error pushing results: {e}")
                 else:
@@ -169,3 +178,6 @@ async def main() -> None:
 
         driver.quit()
         
+        if not (Names and Solutions):
+            e = Exception("The website is changed!")
+            await Actor.fail(exit_code=ActorExitCodes.ERROR_USER_FUNCTION_THREW, exception=e)

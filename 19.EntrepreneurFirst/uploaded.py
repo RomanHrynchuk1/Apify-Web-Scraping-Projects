@@ -8,18 +8,20 @@ https://docs.apify.com/sdk/python
 """
 
 import time
-from urllib.parse import urljoin, urlparse
+# from urllib.parse import urljoin, urlparse
 
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options as ChromeOptions
 from selenium.webdriver.common.by import By
 
-# from selenium.webdriver.chrome.service import Service
-from selenium.common.exceptions import (
-    TimeoutException,
-    NoSuchElementException,
-    WebDriverException,
-)
+# from bs4 import BeautifulSoup
+
+# # from selenium.webdriver.chrome.service import Service
+# from selenium.common.exceptions import (
+#     TimeoutException,
+#     NoSuchElementException,
+#     WebDriverException,
+# )
 
 from apify import Actor
 from apify_shared.consts import ActorExitCodes
@@ -29,9 +31,7 @@ from apify_shared.consts import ActorExitCodes
 # When running on the Apify platform, it is already included in the Actor's Docker image.
 
 BASE_URL_LIST = [
-    {
-        "url": "https://chainreaction.anl.gov/innovators/"
-    },
+    {"url": "https://www.joinef.com/portfolio/?filter-industry=ar-vr-xr,automotive,b2b,climate-or-environment,computing,electrical-infrastructure,energy,environmental-science,food-agriculture-or-farming,hardware,manufacturing-or-industrial,military-or-defense,robotics-iot,space,supply-chain-transportation-or-logistics,sustainability"},
 ]
 
 
@@ -65,101 +65,81 @@ async def main() -> None:
 
         driver.get("http://www.example.com")
         assert driver.title == "Example Domain"
-        
-        
+
         start_url = start_urls[0]["url"]
-        
+
         try:
             driver.get(start_url)
             time.sleep(3)
-        except Exception as e:
+        except:
             e = Exception("The website is changed!")
             await Actor.fail(exit_code=ActorExitCodes.ERROR_USER_FUNCTION_THREW, exception=e)
             return
 
-        other_link_s = driver.find_elements(By.CSS_SELECTOR, "section.landing-section article div.feature-block p a")
-
-        otherLinks_d = []
-        for url in other_link_s:
-            try:
-                href = url.get_attribute('href')
-                if not url.find_elements(By.TAG_NAME, "img"):
-                    otherLinks_d.append(href)
-            except Exception as e:
-                Actor.log.exception(f"An error occurred while processing a URL: {e}")
+        try:
+            driver.find_element(By.CSS_SELECTOR, "button.cky-btn-accept").click()
+            Actor.log.info()
+            time.sleep(1)
+        except Exception as e:
+            Actor.log.exception(
+                f"An error occurred while attempting to click on `Accept cookies` button."
+            )
         
-        otherLinks = list(set(otherLinks_d))
+        while True:
+            try:
+                load_more_button = driver.find_element(By.CSS_SELECTOR, "a.btn--loadmore")
+                load_more_button.click()
+                time.sleep(3)
+            except Exception as e:
+                Actor.log.info(
+                    f"May be the end of `loading more` elements, or An error: {e}"
+                )
+                break
         
         Names, Solutions, Websites, Institutions = False, False, False, False
-
+        
+        elements = driver.find_elements(By.CSS_SELECTOR, "div.tile--company--row a.tile__link")
+        Actor.log.info(f"{len(elements)} elements are found.")
+        otherLinks = []
+        for element in elements:
+            try:
+                href = element.get_attribute('href')
+                otherLinks.append(href)
+            except Exception as ex:
+                Actor.log.exception(f"Unexpected Error: {ex}")
+        
         for otherLink in otherLinks:
-            
             try:
                 driver.get(otherLink)
                 time.sleep(0.3)
             except Exception as e:
-                Actor.log.exception(f"An error occurred while navigating to the start URL: {e}")
-
-
-            companyName1_list = driver.find_elements(By.XPATH, "//h3[contains(@class, 'widget-title')]")
+                Actor.log.exception(f"An error occurred while opening: {href or 'None'}")
+                continue
+            
             try:
-                companyName1 = companyName1_list[0].text.strip() if companyName1_list else ""
+                companyName = driver.find_element(By.CSS_SELECTOR, "h1.pageheader__heading").text.strip()
             except Exception as e:
-                Actor.log.exception(f"An error occurred while extracting companyName1: {e}")
-                companyName1 = ""
-
-
-            companyName2_list = driver.find_elements(By.XPATH, "//*[contains(@class, 'textwidget')]//img")
+                Actor.log.exception(f"An error occurred while extracting companyName: {e}")
+                companyName = ""
             try:
-                companyName2 = (
-                    companyName2_list[0].get_attribute("alt").replace("logo of ", "").replace("Logo of ", "")
-                    if companyName2_list else ""
-                )
+                companySolution = driver.find_element(By.CSS_SELECTOR, "div.company__longbio").text.strip()
             except Exception as e:
-                Actor.log.exception(f"An error occurred while extracting companyName2: {e}")
-                companyName2 = ""
-
-
-            companyName3_list = driver.find_elements(By.XPATH, "//*[contains(@class, 'textwidget')]//a")
-            try:
-                companyName3 = (
-                    companyName3_list[0].get_attribute("title").replace("go to ", "").replace("Go to ", "")
-                    if companyName3_list else ""
-                )
-            except Exception as e:
-                Actor.log.exception(f"An error occurred while extracting companyName3: {e}")
-                companyName3 = ""
-
-
-            companyName = companyName1 or companyName2 or companyName3
-
-
-            companySolution_list = driver.find_elements(By.XPATH, "//*[contains(@class, 'general-deck')]")
-            try:
-                companySolution = companySolution_list[0].text.strip() if companySolution_list else ""
-            except Exception as e:
-                Actor.log.exception(f"An error occurred while extracting companySolution: {e}")
+                Actor.log.warn(f"An error occurred while extracting companySolution: {e}")
                 companySolution = ""
-
-
-            companyWebsite_list = driver.find_elements(By.CSS_SELECTOR, ".textwidget ul li a[href*='http']")
-            companyWebsite = ""
-            for website in companyWebsite_list:
-                try:
-                    if website.text.strip().lower() == "website":
-                        companyWebsite = website.get_attribute("href")
-                        if companyWebsite:
-                            break  # Exit loop once the desired link is found
-                except Exception as e:
-                    Actor.log.exception(f"An error occurred while extracting companyWebsite: {e}")
-
-
-            companyName = companyName or companyWebsite or ""
+            
+            try:
+                companyWebsite = driver.find_element(By.CSS_SELECTOR, "a.pageheader__websitebtn").get_attribute('href')
+            except Exception as e:
+                Actor.log.warn(f"An error occurred while extracting companyWebsite: {e}")
+                companyWebsite = ""
+                
+            companyName = companyName or ""
+            companySolution = companySolution or ""
             companyWebsite = companyWebsite or ""
             
             try:
                 Actor.log.info(
-                    f"Name: {companyName}, Solution: {companySolution}, Website: {companyWebsite}, Link: {otherLink}"
+                    f"Name: {companyName}; Solution: {companySolution}; Website: {companyWebsite}; OtherLink: {otherLink}"
                 )
                 await Actor.push_data(
                     {
@@ -177,9 +157,9 @@ async def main() -> None:
 
             except Exception as e:
                 Actor.log.exception(f"Error pushing results: {e}")
-
+                
         driver.quit()
-        
+
         if not (Names and Solutions and Websites):
             e = Exception("The website is changed!")
             await Actor.fail(exit_code=ActorExitCodes.ERROR_USER_FUNCTION_THREW, exception=e)

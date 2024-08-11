@@ -24,6 +24,7 @@ from bs4 import BeautifulSoup
 # )
 
 from apify import Actor
+from apify_shared.consts import ActorExitCodes
 
 # To run this Actor locally, you need to have the Selenium Chromedriver installed.
 # https://www.selenium.dev/documentation/webdriver/getting_started/install_drivers/
@@ -70,10 +71,9 @@ async def main() -> None:
         try:
             driver.get(start_url)
             time.sleep(3)
-        except Exception as e:
-            Actor.log.exception(
-                f"An error occurred while navigating to the start URL: {e}"
-            )
+        except:
+            e = Exception("The website is changed!")
+            await Actor.fail(exit_code=ActorExitCodes.ERROR_USER_FUNCTION_THREW, exception=e)
             return
 
         page_source = driver.page_source
@@ -82,12 +82,14 @@ async def main() -> None:
         
         elements = soup.select("div.mfp-hide.js-cportfolio-modal")
         
+        Names, Solutions, Websites, Institutions = False, False, False, False
+        
         for element in elements:
             try:
                 companyName = element.select_one("div.cportfolio__popup__main__top h2").text.strip()
             except Exception as e:
                 Actor.log.exception(f"An error occurred while extracting companyName: {e}")
-                companyName = "N/A"
+                companyName = ""
             
             try:
                 companySolutions = element.select("section.main-content div.grid__column")
@@ -103,20 +105,20 @@ async def main() -> None:
                 companySolution = TheSolution or About or FirstText
             except Exception as e:
                 Actor.log.warn(f"An error occurred while extracting companySolution: {e}")
-                companySolution = "N/A"
+                companySolution = ""
             
             try:
                 companyWebsite = ""
                 for element_url in element.select("div.cportfolio__popup__sidebar div.cportfolio__popup__sidebar__section--logo a"):
                     if element_url.text.strip() == "Website":
-                        companyWebsite = element_url.get('href', "#")
+                        companyWebsite = element_url.get('href', "")
             except Exception as e:
                 Actor.log.warn(f"An error occurred while extracting companyWebsite: {e}")
-                companyWebsite = "#"
-                
-            companyName = companyName or "N/A"
-            companySolution = companySolution or "N/A"
-            companyWebsite = companyWebsite or "#"
+                companyWebsite = ""
+
+            companyName = companyName or ""
+            companySolution = companySolution or ""
+            companyWebsite = companyWebsite or ""
             
             try:
                 Actor.log.info(
@@ -125,13 +127,23 @@ async def main() -> None:
                 await Actor.push_data(
                     {
                         "companyName": companyName,
-                        "affiliatedInstitution": "N/A",
+                        "affiliatedInstitution": "",
                         "companySolution": companySolution,
                         "companyWebsite": companyWebsite,
-                        "otherLink": "#",
+                        "otherLink": "",
                     }
                 )
+                
+                Names = True if companyName else Names
+                Solutions = True if companySolution else Solutions
+                Websites = True if companyWebsite else Websites
+
             except Exception as e:
                 Actor.log.exception(f"Error pushing results: {e}")
                 
         driver.quit()
+
+        if not (Names and Solutions and Websites):
+            e = Exception("The website is changed!")
+            await Actor.fail(exit_code=ActorExitCodes.ERROR_USER_FUNCTION_THREW, exception=e)
+    

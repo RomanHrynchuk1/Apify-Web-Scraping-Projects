@@ -14,6 +14,7 @@ from bs4 import BeautifulSoup
 from httpx import AsyncClient, HTTPStatusError, RequestError
 
 from apify import Actor
+from apify_shared.consts import ActorExitCodes
 
 # To run this Actor locally, you need to have the Selenium Chromedriver installed.
 # https://www.selenium.dev/documentation/webdriver/getting_started/install_drivers/
@@ -70,6 +71,11 @@ async def main() -> None:
         
         if not otherLinks:
             Actor.log.critical("Can't find the list elements.")
+            e = Exception("The website is changed!")
+            await Actor.fail(exit_code=ActorExitCodes.ERROR_USER_FUNCTION_THREW, exception=e)
+            return
+            
+        Names, Solutions, Websites, Institutions = False, False, False, False
         
         for otherLink in otherLinks:
             try:
@@ -82,19 +88,19 @@ async def main() -> None:
 
             try:
                 companyName = soup.select_one("h1.split-topper__title")
-                companyName = companyName.text.strip() if companyName else "N/A"
+                companyName = companyName.text.strip() if companyName else ""
             except Exception as e:
                 print(f"An error occurred while extracting company name: {e}")
 
             try:
                 companySolution = soup.select_one("section.content-block")
-                companySolution = companySolution.find("p").text.strip() if companySolution else "N/A"
+                companySolution = companySolution.find("p").text.strip() if companySolution else ""
             except Exception as e:
                 print(f"An error occurred while extracting company solution: {e}")
 
             try:
                 companyWebsite = soup.select_one("div.company-footer__definition-list a[href*='.']")
-                companyWebsite = companyWebsite["href"].strip() if companyWebsite else "#"
+                companyWebsite = companyWebsite["href"].strip() if companyWebsite else ""
             except Exception as e:
                 print(f"An error occurred while extracting company website: {e}")
 
@@ -111,5 +117,15 @@ async def main() -> None:
                         "otherLink": otherLink,
                     }
                 )
+                
+                Names = True if companyName else Names
+                Solutions = True if companySolution else Solutions
+                Websites = True if companyWebsite else Websites
+
             except Exception as e:
                 Actor.log.exception(f"Error pushing results: {e}")
+                
+        if not (Names and Solutions and Websites):
+            e = Exception("The website is changed!")
+            await Actor.fail(exit_code=ActorExitCodes.ERROR_USER_FUNCTION_THREW, exception=e)
+            

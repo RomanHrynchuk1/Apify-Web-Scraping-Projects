@@ -16,6 +16,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service
 
 from apify import Actor
+from apify_shared.consts import ActorExitCodes
 
 # To run this Actor locally, you need to have the Selenium Chromedriver installed.
 # https://www.selenium.dev/documentation/webdriver/getting_started/install_drivers/
@@ -60,41 +61,14 @@ async def main() -> None:
 
         driver.get('http://www.example.com')
         assert driver.title == 'Example Domain'
-
-        # # Process the requests in the queue one by one
-        # while request := await default_queue.fetch_next_request():
-        #     url = request['url']
-        #     depth = request['userData']['depth']
-        #     Actor.log.info(f'Scraping {url} ...')
-
-        #     try:
-        #         # Open the URL in the Selenium WebDriver
-        #         driver.get(url)
-
-        #         # If we haven't reached the max depth,
-        #         # look for nested links and enqueue their targets
-        #         if depth < max_depth:
-        #             for link in driver.find_elements(By.TAG_NAME, 'a'):
-        #                 link_href = link.get_attribute('href')
-        #                 link_url = urljoin(url, link_href)
-        #                 if link_url.startswith(('http://', 'https://')):
-        #                     Actor.log.info(f'Enqueuing {link_url} ...')
-        #                     await default_queue.add_request({
-        #                         'url': link_url,
-        #                         'userData': {'depth': depth + 1},
-        #                     })
-
-        #         # Push the title of the page into the default dataset
-        #         title = driver.title
-        #         await Actor.push_data({'url': url, 'title': title})
-        #     except Exception:
-        #         Actor.log.exception(f'Cannot extract data from {url}.')
-        #     finally:
-        #         await default_queue.mark_request_as_handled(request)
-
         
-        driver.get(url=URL)
-        time.sleep(10)
+        try:
+            driver.get(url=URL)
+            time.sleep(10)
+        except:
+            e = Exception("The website is changed!")
+            await Actor.fail(exit_code=ActorExitCodes.ERROR_USER_FUNCTION_THREW, exception=e)
+            return
 
         # Scroll to the bottom to load more content
         driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
@@ -111,6 +85,7 @@ async def main() -> None:
         time.sleep(5)
 
         # companyName, companySolution, companyWebsite
+        Names, Solutions, Websites, Institutions, Otherlinks = False, False, False, False, False
 
         content_sections = driver.find_elements(By.CSS_SELECTOR, "div.content-section > div > div > div")
 
@@ -118,26 +93,40 @@ async def main() -> None:
             try:
                 companyName = one_section.find_element(By.TAG_NAME, "h3").text.strip()
             except Exception as e:
-                companyName = "N/A"
+                companyName = ""
                 print(f"Error retrieving company name: {e}")
 
             try:
-                companyDescription = one_section.find_element(By.CSS_SELECTOR, "div.list-field-element > div > p").text.strip()
+                companySolution = one_section.find_element(By.CSS_SELECTOR, "div.list-field-element > div > p").text.strip()
             except Exception as e:
-                companyDescription = "N/A"
+                companySolution = ""
                 print(f"Error retrieving company description: {e}")
 
             try:
                 companyWebsite = one_section.find_element(By.CSS_SELECTOR, "div.list-field-element > div > div > p > a").get_attribute("href").strip()
             except Exception as e:
-                companyWebsite = "N/A"
+                companyWebsite = ""
                 print(f"Error retrieving company website: {e}")
 
             try:
-                Actor.log.info(f"Name: {companyName}, Description: {companyDescription}, Website: {companyWebsite}")
-                await Actor.push_data({"companyName": companyName, "companyDescription": companyDescription, "companyWebsite": companyWebsite})
+                Actor.log.info(f"Name: {companyName}, Description: {companySolution}, Website: {companyWebsite}")
+                await Actor.push_data(
+                    {
+                        "companyName": companyName,
+                        "affiliatedInstitution": "",
+                        "companySolution": companySolution,
+                        "companyWebsite": companyWebsite,
+                        "otherLink": "",
+                    }
+                )
+                Names = True if companyName else Names
+                Solutions = True if companySolution else Solutions
+                Websites = True if companyWebsite else Websites
             except Exception as e:
                 print(f"Error pushing results: {e}")
 
-
+        if not (Names and Solutions and Websites):
+            e = Exception("The website is changed!")
+            await Actor.fail(exit_code=ActorExitCodes.ERROR_USER_FUNCTION_THREW, exception=e)
+        
         driver.quit()
